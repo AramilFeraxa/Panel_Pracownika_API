@@ -10,6 +10,7 @@ namespace PanelPracownika.Data
         public DbSet<UserTask> UserTasks { get; set; }
         public DbSet<WorkTime> WorkTimes { get; set; }
         public DbSet<Login> Users { get; set; }
+        public DbSet<DelegationDate> DelegationDates { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
