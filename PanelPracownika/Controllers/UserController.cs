@@ -100,5 +100,50 @@ namespace PanelPracownika.Controllers
             await _context.SaveChangesAsync();
             return Ok(user);
         }
-    }       
+
+        [HttpGet("profile")]
+        public async Task<IActionResult> GetProfile()
+        {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return NotFound();
+
+            return Ok(new
+            {
+                user.Username,
+                user.Name,
+                user.Surname
+            });
+        }
+
+
+        [HttpPut("profile")]
+        public async Task<IActionResult> UpdateProfile([FromBody] UpdateUserDto dto)
+        {
+            var userIdClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return NotFound();
+
+            user.Name = dto.Name;
+            user.Surname = dto.Surname;
+
+            if (!string.IsNullOrEmpty(dto.NewPassword))
+            {
+                user.Password = user.HashPassword(dto.NewPassword);
+            }
+
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
+
+
+    }
 }
