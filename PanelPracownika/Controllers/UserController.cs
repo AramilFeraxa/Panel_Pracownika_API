@@ -35,7 +35,8 @@ namespace PanelPracownika.Controllers
                 User = new
                 {
                     userFromDB.Username,
-                    userFromDB.Id
+                    userFromDB.Id,
+                    userFromDB.IsAdmin
                 }
             });
         }
@@ -54,7 +55,7 @@ namespace PanelPracownika.Controllers
             return Ok(users);
         }
 
-        [HttpPost]
+        /*[HttpPost]
         public async Task<ActionResult<Login>> PostUser(Login user)
         {
             user.Password = user.HashPassword(user.Password);
@@ -99,7 +100,7 @@ namespace PanelPracownika.Controllers
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
             return Ok(user);
-        }
+        }*/
 
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()

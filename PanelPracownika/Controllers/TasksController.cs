@@ -24,8 +24,14 @@ namespace PanelPracownika.Controllers
 
         private int GetUserId()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            return userIdClaim != null && int.TryParse(userIdClaim.Value, out int userId) ? userId : 0;
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
+        private bool IsAdmin()
+        {
+            var claim = User.FindFirst("IsAdmin");
+            return claim != null && claim.Value == "1";
         }
 
         [HttpGet]
@@ -33,15 +39,19 @@ namespace PanelPracownika.Controllers
         {
             var tasks = new List<UserTask>();
             int userId = GetUserId();
+            bool isAdmin = IsAdmin();
 
             using (var connection = new MySqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
-                string query = "SELECT * FROM UserTasks WHERE UserId = @UserId";
+                string query = isAdmin
+                    ? "SELECT * FROM UserTasks"
+                    : "SELECT * FROM UserTasks WHERE UserId = @UserId";
 
                 using (var command = new MySqlCommand(query, connection))
                 {
-                    command.Parameters.AddWithValue("@UserId", userId);
+                    if (!isAdmin)
+                        command.Parameters.AddWithValue("@UserId", userId);
 
                     using (var reader = await command.ExecuteReaderAsync())
                     {
@@ -51,9 +61,7 @@ namespace PanelPracownika.Controllers
                             {
                                 Id = reader.GetInt32("Id"),
                                 Text = reader.GetString("Text"),
-                                DueDate = reader.IsDBNull("DueDate")
-                                    ? null
-                                    : reader.GetDateTime("DueDate").ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                DueDate = reader.IsDBNull("DueDate") ? (DateTime?)null : reader.GetDateTime("DueDate"),
                                 Completed = reader.GetBoolean("Completed"),
                                 UserId = reader.GetInt32("UserId")
                             });
@@ -65,53 +73,14 @@ namespace PanelPracownika.Controllers
             return tasks;
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<UserTask>> GetTask(int id)
-        {
-            UserTask task = null;
-            int userId = GetUserId();
-
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                await connection.OpenAsync();
-                string query = "SELECT * FROM UserTasks WHERE Id = @Id AND UserId = @UserId";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@Id", id);
-                    command.Parameters.AddWithValue("@UserId", userId);
-
-                    using (var reader = await command.ExecuteReaderAsync())
-                    {
-                        if (await reader.ReadAsync())
-                        {
-                            task = new UserTask
-                            {
-                                Id = reader.GetInt32("Id"),
-                                Text = reader.GetString("Text"),
-                                DueDate = reader.IsDBNull("DueDate")
-                                    ? null
-                                    : reader.GetDateTime("DueDate").ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                                Completed = reader.GetBoolean("Completed"),
-                                UserId = reader.GetInt32("UserId")
-                            };
-                        }
-                    }
-                }
-            }
-
-            if (task == null)
-            {
-                return NotFound();
-            }
-
-            return task;
-        }
-
         [HttpPost]
         public async Task<ActionResult<UserTask>> PostTask(UserTask task)
         {
-            task.UserId = GetUserId();
+            int userId = GetUserId();
+            bool isAdmin = IsAdmin();
+
+            if (!isAdmin || task.UserId == 0)
+                task.UserId = userId;
 
             using (var connection = new MySqlConnection(_connectionString))
             {
@@ -133,20 +102,60 @@ namespace PanelPracownika.Controllers
             return CreatedAtAction(nameof(GetTask), new { id = task.Id }, task);
         }
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutTask(int id, UserTask task)
+        [HttpGet("{id}")]
+        public async Task<ActionResult<UserTask>> GetTask(int id)
         {
-            if (id != task.Id)
-            {
-                return BadRequest();
-            }
-
-            task.UserId = GetUserId();
+            UserTask task = null;
+            int userId = GetUserId();
+            bool isAdmin = IsAdmin();
 
             using (var connection = new MySqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
-                string query = "UPDATE UserTasks SET Text = @Text, DueDate = @DueDate, Completed = @Completed WHERE Id = @Id AND UserId = @UserId";
+                string query = isAdmin
+                    ? "SELECT * FROM UserTasks WHERE Id = @Id"
+                    : "SELECT * FROM UserTasks WHERE Id = @Id AND UserId = @UserId";
+
+                using (var command = new MySqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("@Id", id);
+                    if (!isAdmin)
+                        command.Parameters.AddWithValue("@UserId", userId);
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        if (await reader.ReadAsync())
+                        {
+                            task = new UserTask
+                            {
+                                Id = reader.GetInt32("Id"),
+                                Text = reader.GetString("Text"),
+                                DueDate = reader.IsDBNull("DueDate") ? (DateTime?)null : reader.GetDateTime("DueDate"),
+                                Completed = reader.GetBoolean("Completed"),
+                                UserId = reader.GetInt32("UserId")
+                            };
+                        }
+                    }
+                }
+            }
+
+            if (task == null) return NotFound();
+            return task;
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> PutTask(int id, UserTask task)
+        {
+            if (id != task.Id) return BadRequest();
+
+            int userId = GetUserId();
+            bool isAdmin = IsAdmin();
+
+            using (var connection = new MySqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+                string query = "UPDATE UserTasks SET Text = @Text, DueDate = @DueDate, Completed = @Completed WHERE Id = @Id" +
+                               (isAdmin ? "" : " AND UserId = @UserId");
 
                 using (var command = new MySqlCommand(query, connection))
                 {
@@ -154,13 +163,11 @@ namespace PanelPracownika.Controllers
                     command.Parameters.AddWithValue("@Text", task.Text);
                     command.Parameters.AddWithValue("@DueDate", task.DueDate ?? (object)DBNull.Value);
                     command.Parameters.AddWithValue("@Completed", task.Completed);
-                    command.Parameters.AddWithValue("@UserId", task.UserId);
+                    if (!isAdmin)
+                        command.Parameters.AddWithValue("@UserId", userId);
 
-                    var rowsAffected = await command.ExecuteNonQueryAsync();
-                    if (rowsAffected == 0)
-                    {
-                        return NotFound();
-                    }
+                    int result = await command.ExecuteNonQueryAsync();
+                    if (result == 0) return NotFound();
                 }
             }
 
@@ -171,22 +178,22 @@ namespace PanelPracownika.Controllers
         public async Task<IActionResult> DeleteTask(int id)
         {
             int userId = GetUserId();
+            bool isAdmin = IsAdmin();
 
             using (var connection = new MySqlConnection(_connectionString))
             {
                 await connection.OpenAsync();
-                string query = "DELETE FROM UserTasks WHERE Id = @Id AND UserId = @UserId";
+                string query = "DELETE FROM UserTasks WHERE Id = @Id" +
+                               (isAdmin ? "" : " AND UserId = @UserId");
 
                 using (var command = new MySqlCommand(query, connection))
                 {
                     command.Parameters.AddWithValue("@Id", id);
-                    command.Parameters.AddWithValue("@UserId", userId);
+                    if (!isAdmin)
+                        command.Parameters.AddWithValue("@UserId", userId);
 
-                    var rowsAffected = await command.ExecuteNonQueryAsync();
-                    if (rowsAffected == 0)
-                    {
-                        return NotFound();
-                    }
+                    int result = await command.ExecuteNonQueryAsync();
+                    if (result == 0) return NotFound();
                 }
             }
 

@@ -4,12 +4,15 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace PanelPracownika.Models
 {
-    public class DelegationDate
+    public class AbsenceDate
     {
         public int Id { get; set; }
 
         [Required]
         public DateTime Date { get; set; }
+
+        [Required]
+        public string Type { get; set; }
 
         [ForeignKey("User")]
         public int UserId { get; set; }
