@@ -32,13 +32,15 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policy =>
-        {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
-        });
+    options.AddPolicy("AllowFrontendOrigins", policy =>
+    {
+        policy.WithOrigins(
+                "http://localhost:3000",
+                "https://host656095.xce.pl"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
 });
 
 builder.Services.AddControllers();
@@ -46,7 +48,7 @@ builder.Services.AddControllers();
 var app = builder.Build();
 
 //app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("AllowFrontendOrigins");
 app.UseAuthentication();
 app.UseAuthorization();
 
