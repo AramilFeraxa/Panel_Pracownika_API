@@ -10,45 +10,49 @@ namespace PanelPracownika.Controllers
     [Authorize]
     [ApiController]
     [Route("api/[controller]")]
-    public class DelegationsController : ControllerBase
+    public class AbsenceController : ControllerBase
     {
         private readonly AppDbContext _context;
 
-        public DelegationsController(AppDbContext context)
+        public AbsenceController(AppDbContext context)
         {
             _context = context;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetUserDelegations()
+        public async Task<IActionResult> GetUserAbsences()
         {
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
 
-            var dates = await _context.DelegationDates
+            var dates = await _context.AbsenceDates
                 .Where(d => d.UserId == userId)
-                .Select(d => d.Date.ToString("yyyy-MM-dd"))
+                .Select(e => new
+                {
+                    date = e.Date.ToString("yyyy-MM-dd"),
+                    type = e.Type
+                })
                 .ToListAsync();
 
             return Ok(dates);
         }
 
         [HttpPost]
-        public async Task<IActionResult> AddDelegation([FromBody] AddDelegationDto dto)
+        public async Task<IActionResult> AddAbsence([FromBody] AddAbsenceDto dto)
         {
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
 
             var date = DateTime.SpecifyKind(dto.Date.Date, DateTimeKind.Utc);
 
-            if (date == default)
-                return BadRequest("Niepoprawna data.");
+            if (date == default || string.IsNullOrEmpty(dto.Type)) return BadRequest("Niepoprawna data lub typ.");
 
-            bool exists = await _context.DelegationDates
+
+            bool exists = await _context.AbsenceDates
                 .AnyAsync(d => d.UserId == userId && d.Date.Date == date);
 
             if (exists)
-                return Conflict("Delegacja już istnieje.");
+                return Conflict("Wpis na ten dzień już istnieje.");
 
             var existingWorkTime = await _context.WorkTimes
                 .FirstOrDefaultAsync(w => w.UserId == userId && w.Date.Date == date);
@@ -58,13 +62,14 @@ namespace PanelPracownika.Controllers
                 return Conflict("W tym dniu już istnieje wpis z godzinami pracy, nie można dodać delegacji.");
             }
 
-            var record = new DelegationDate
+            var record = new AbsenceDate
             {
                 UserId = userId.Value,
-                Date = date
+                Date = date,
+                Type = dto.Type
             };
 
-            _context.DelegationDates.Add(record);
+            _context.AbsenceDates.Add(record);
 
             if (existingWorkTime == null)
             {
@@ -86,7 +91,7 @@ namespace PanelPracownika.Controllers
 
 
         [HttpDelete("{date}")]
-        public async Task<IActionResult> DeleteDelegation(string date)
+        public async Task<IActionResult> DeleteAbsence(string date)
         {
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
@@ -96,13 +101,13 @@ namespace PanelPracownika.Controllers
 
             var dateOnly = DateTime.SpecifyKind(parsedDate.Date, DateTimeKind.Utc);
 
-            var record = await _context.DelegationDates
+            var record = await _context.AbsenceDates
                 .FirstOrDefaultAsync(d => d.UserId == userId && d.Date.Date == dateOnly);
 
             if (record == null)
-                return NotFound("Nie znaleziono delegacji.");
+                return NotFound("Nie znaleziono wpisu.");
 
-            _context.DelegationDates.Remove(record);
+            _context.AbsenceDates.Remove(record);
 
             var workTime = await _context.WorkTimes
                 .FirstOrDefaultAsync(w => w.UserId == userId && w.Date.Date == dateOnly && w.Total == 0);
@@ -123,8 +128,10 @@ namespace PanelPracownika.Controllers
         }
     }
 
-    public class AddDelegationDto
+
+    public class AddAbsenceDto
     {
         public DateTime Date { get; set; }
+        public string Type { get; set; }
     }
 }

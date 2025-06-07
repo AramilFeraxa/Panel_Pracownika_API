@@ -10,7 +10,7 @@ namespace PanelPracownika.Data
         public DbSet<UserTask> UserTasks { get; set; }
         public DbSet<WorkTime> WorkTimes { get; set; }
         public DbSet<Login> Users { get; set; }
-        public DbSet<DelegationDate> DelegationDates { get; set; }
+        public DbSet<AbsenceDate> AbsenceDates { get; set; }
         public DbSet<UserSalary> UserSalaries { get; set; }
         public DbSet<SalaryRecord> SalaryRecords { get; set; }
 
