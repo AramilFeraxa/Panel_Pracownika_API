@@ -6,7 +6,6 @@ using PanelPracownika.Models;
 
 namespace PanelPracownika.Controllers
 {
-    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
 
@@ -103,7 +102,7 @@ namespace PanelPracownika.Controllers
             await _context.SaveChangesAsync();
             return Ok(user);
         }*/
-
+        [Authorize]
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
@@ -123,7 +122,7 @@ namespace PanelPracownika.Controllers
             });
         }
 
-
+        [Authorize]
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] UpdateUserDto dto)
         {
