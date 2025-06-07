@@ -193,6 +193,38 @@ namespace PanelPracownika.Controllers
             return Ok(user);
         }
 
+        [HttpGet("users/{userId}/worktimes")]
+        public async Task<IActionResult> GetUserWorkTimes(int userId, [FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound("Nie znaleziono użytkownika.");
+
+            var query = _context.WorkTimes.Where(wt => wt.UserId == userId);
+
+            if (startDate.HasValue)
+                query = query.Where(wt => wt.Date >= startDate.Value);
+
+            if (endDate.HasValue)
+                query = query.Where(wt => wt.Date <= endDate.Value);
+
+            var workTimes = await query
+                .OrderByDescending(wt => wt.Date)
+                .ThenBy(wt => wt.StartTime)
+                .Select(wt => new
+                {
+                    wt.Id,
+                    Date = wt.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    wt.StartTime,
+                    wt.EndTime,
+                    wt.Total
+                })
+                .ToListAsync();
+
+            return Ok(workTimes);
+        }
+
     }
 
     public class CreateUserDto
