@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PanelPracownika.Data;
 using PanelPracownika.Models;
+using System.Security.Claims;
 
 namespace PanelPracownika.Controllers
 {
@@ -54,6 +55,28 @@ namespace PanelPracownika.Controllers
             }
 
             return Ok(users);
+        }
+
+        [Authorize]
+        [HttpGet("me")]
+        public async Task<IActionResult> GetCurrentUser()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return NotFound();
+
+            return Ok(new
+            {
+                user.Id,
+                user.Username,
+                user.IsAdmin,
+                user.Name,
+                user.Surname
+            });
         }
 
         /*[HttpPost]
