@@ -13,10 +13,12 @@ namespace PanelPracownika.Controllers
     public class UserController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IConfiguration _configuration;
 
-        public UserController(AppDbContext context)
+        public UserController(AppDbContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
         [HttpPost("login")]
@@ -29,7 +31,7 @@ namespace PanelPracownika.Controllers
                 return Unauthorized("Invalid username or password.");
             }
 
-            var token = userFromDB.GenerateToken(userFromDB.Id.ToString());
+            var token = userFromDB.GenerateToken(userFromDB.Id.ToString(), _configuration);
 
             return Ok(new
             {

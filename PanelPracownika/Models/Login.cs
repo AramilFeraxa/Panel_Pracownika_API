@@ -10,6 +10,7 @@ namespace PanelPracownika.Models
         public string Username { get; set; }
         public string Password { get; set; }
     }
+
     public class Login
     {
         public int Id { get; set; }
@@ -32,7 +33,7 @@ namespace PanelPracownika.Models
             return result == PasswordVerificationResult.Success;
         }
 
-        internal string GenerateToken(string id)
+        public string GenerateToken(string id, IConfiguration configuration)
         {
             var claims = new[]
             {
@@ -40,16 +41,19 @@ namespace PanelPracownika.Models
                 new Claim(ClaimTypes.Name, Username),
             };
 
-            var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes("yourSuperSecretKey@1234567890!@#"));
+            var secretKey = configuration["JwtSettings:SecretKey"];
+
+            var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(secretKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
-                               issuer: "http://localhost:3000",
-                                              audience: "http://localhost:3000",
-                                                             claims: claims,
-                                                                            expires: DateTime.Now.AddMinutes(30),
-                                                                                           signingCredentials: creds
-                                                                                                      );
+                issuer: "http://localhost:3000",
+                audience: "http://localhost:3000",
+                claims: claims,
+                expires: DateTime.Now.AddMinutes(30),
+                signingCredentials: creds
+            );
+
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
