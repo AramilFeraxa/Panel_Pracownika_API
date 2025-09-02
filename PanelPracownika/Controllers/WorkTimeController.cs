@@ -58,7 +58,8 @@ namespace PanelPracownika.Controllers
                 Date = dto.Date,
                 StartTime = dto.StartTime,
                 EndTime = dto.EndTime,
-                UserId = userId
+                UserId = userId,
+                IsRemote = dto.IsRemote
             };
 
             workTime.SetTotal(start, end);
@@ -88,6 +89,7 @@ namespace PanelPracownika.Controllers
             workTime.Date = dto.Date;
             workTime.StartTime = dto.StartTime;
             workTime.EndTime = dto.EndTime;
+            workTime.IsRemote = dto.IsRemote;
 
             if (!TimeSpan.TryParse(dto.StartTime, out TimeSpan start) || !TimeSpan.TryParse(dto.EndTime, out TimeSpan end))
                 return BadRequest("Invalid time format.");
