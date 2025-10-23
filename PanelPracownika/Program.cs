@@ -38,7 +38,8 @@ builder.Services.AddCors(options =>
     {
         policy.WithOrigins(
                 "http://localhost:3000",
-                "https://host656095.xce.pl"
+                "https://host656095.xce.pl",
+                "https://panel.xce.pl"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
