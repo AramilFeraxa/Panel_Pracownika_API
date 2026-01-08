@@ -245,5 +245,23 @@ namespace PanelPracownika.Controllers
             return File(user.ProfileImage, user.ProfileImageContentType ?? "image/jpeg");
         }
 
+        [Authorize]
+        [HttpDelete("profile/photo")]
+        public async Task<IActionResult> DeleteProfilePhoto()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return NotFound();
+
+            user.ProfileImage = null;
+            user.ProfileImageContentType = null;
+
+            await _context.SaveChangesAsync();
+            return NoContent(); 
+        }
     }
 }
