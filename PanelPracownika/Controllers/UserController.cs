@@ -6,7 +6,7 @@ using PanelPracownika.Models;
 using System.Security.Claims;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace PanelPracownika.Controllers
 {
@@ -198,8 +198,8 @@ namespace PanelPracownika.Controllers
             if (!allowed.Contains(file.ContentType))
                 return BadRequest("Only JPG, PNG or WEBP allowed.");
 
-            if (file.Length > 2 * 1024 * 1024)
-                return BadRequest("Max file size is 2MB.");
+            if (file.Length > 15 * 1024 * 1024)
+                return BadRequest("Max file size is 15MB.");
 
             using var inputStream = file.OpenReadStream();
             using var image = await Image.LoadAsync(inputStream);
@@ -213,17 +213,15 @@ namespace PanelPracownika.Controllers
 
             using var outputStream = new MemoryStream();
 
-            IImageEncoder encoder = file.ContentType switch
+            var encoder = new JpegEncoder
             {
-                "image/png" => new SixLabors.ImageSharp.Formats.Png.PngEncoder(),
-                "image/webp" => new SixLabors.ImageSharp.Formats.Webp.WebpEncoder(),
-                _ => new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = 85 }
+                Quality = 75
             };
 
-            await image.SaveAsync(outputStream, encoder);
+            await image.SaveAsJpegAsync(outputStream, encoder);
 
             user.ProfileImage = outputStream.ToArray();
-            user.ProfileImageContentType = file.ContentType;
+            user.ProfileImageContentType = "image/jpeg";
 
             await _context.SaveChangesAsync();
             return NoContent();
