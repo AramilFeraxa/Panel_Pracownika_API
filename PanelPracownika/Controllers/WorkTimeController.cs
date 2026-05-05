@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using PanelPracownika.Data;
 using PanelPracownika.Models;
 using PanelPracownika.Services;
@@ -15,11 +16,13 @@ namespace PanelPracownika.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IEmailService _emailService;
+        private readonly EmailSettings _emailSettings;
 
-        public WorkTimeController(AppDbContext context, IEmailService emailService)
+        public WorkTimeController(AppDbContext context, IEmailService emailService, IOptions<EmailSettings> emailSettings)
         {
             _context = context;
             _emailService = emailService;
+            _emailSettings = emailSettings.Value;
         }
 
         [Authorize]
@@ -130,7 +133,12 @@ namespace PanelPracownika.Controllers
             [FromForm] string body
         )
         {
-            const string recipient = "mateusz.kopec@czteryswiaty.pl";
+            var recipient = _emailSettings.RecipientEmail;
+
+            if (string.IsNullOrWhiteSpace(recipient))
+            {
+                return StatusCode(500, "Brak skonfigurowanego adresu odbiorcy w secrets.json.");
+            }
 
             if (file == null || file.Length == 0)
             {
@@ -156,15 +164,20 @@ namespace PanelPracownika.Controllers
                 .Select(u => u.Email)
                 .FirstOrDefaultAsync();
 
-            var fromEmail = string.IsNullOrWhiteSpace(userEmail)
-                ? "nasze@czteryswiaty.pl"
-                : userEmail;
+            var fromEmail = string.IsNullOrWhiteSpace(_emailSettings.FromEmail)
+                ? userEmail
+                : _emailSettings.FromEmail;
+
+            if (string.IsNullOrWhiteSpace(fromEmail))
+            {
+                return StatusCode(500, "Brak skonfigurowanego adresu nadawcy w secrets.json.");
+            }
 
             try
             {
                 await _emailService.SendEmailWithAttachmentAsync(
                     recipient,
-                    userEmail,
+                    fromEmail,
                     subject,
                     body,
                     file
