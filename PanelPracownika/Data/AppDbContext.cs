@@ -16,10 +16,40 @@ namespace PanelPracownika.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            modelBuilder.Entity<Login>()
+                .Property(u => u.Email)
+                .IsRequired(false)
+                .HasDefaultValue("");
+
+            modelBuilder.Entity<AbsenceDate>()
+                .Property(a => a.Type)
+                .IsRequired(false)
+                .HasDefaultValue("Wyjazd");
+
+            modelBuilder.Entity<AbsenceDate>()
+                .Property(a => a.Reason)
+                .IsRequired(false)
+                .HasDefaultValue("Wyjazd");
+
             modelBuilder.Entity<WorkTime>()
                 .HasOne(w => w.User)
                 .WithMany()
                 .HasForeignKey(w => w.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<UserTask>()
+                .HasIndex(t => t.UserId);
+
+            modelBuilder.Entity<UserSalary>()
+                .HasIndex(s => s.UserId);
+
+            modelBuilder.Entity<SalaryRecord>()
+                .HasIndex(s => s.UserId);
+
+            modelBuilder.Entity<AbsenceDate>()
+                .HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
             base.OnModelCreating(modelBuilder);

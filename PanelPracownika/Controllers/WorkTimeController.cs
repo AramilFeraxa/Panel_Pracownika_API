@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PanelPracownika.Data;
 using PanelPracownika.Models;
+using PanelPracownika.Services;
 using System.Security.Claims;
 
 namespace PanelPracownika.Controllers
@@ -13,10 +14,12 @@ namespace PanelPracownika.Controllers
     public class WorkTimeController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
 
-        public WorkTimeController(AppDbContext context)
+        public WorkTimeController(AppDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         [Authorize]
@@ -41,7 +44,6 @@ namespace PanelPracownika.Controllers
 
             return Ok(workTimes);
         }
-
 
         [HttpPost]
         public async Task<ActionResult<WorkTime>> PostWorkTime([FromBody] WorkTimeDto dto)
@@ -69,8 +71,6 @@ namespace PanelPracownika.Controllers
 
             return Ok(workTime);
         }
-
-
 
         [HttpPut("{id}")]
         public async Task<IActionResult> PutWorkTime(int id, [FromBody] WorkTimeDto dto)
@@ -102,7 +102,6 @@ namespace PanelPracownika.Controllers
             return NoContent();
         }
 
-
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteWorkTime(int id)
         {
@@ -120,8 +119,63 @@ namespace PanelPracownika.Controllers
 
             _context.WorkTimes.Remove(workTime);
             await _context.SaveChangesAsync();
+
             return NoContent();
         }
 
+        [HttpPost("send-hours-email")]
+        public async Task<IActionResult> SendHoursEmail(
+            [FromForm] IFormFile file,
+            [FromForm] string subject,
+            [FromForm] string body
+        )
+        {
+            const string recipient = "mateusz.kopec@czteryswiaty.pl";
+
+            if (file == null || file.Length == 0)
+            {
+                return BadRequest("Nie przesłano pliku.");
+            }
+
+            if (string.IsNullOrWhiteSpace(subject))
+            {
+                return BadRequest("Nie podano tematu wiadomości.");
+            }
+
+            if (string.IsNullOrWhiteSpace(body))
+            {
+                body = "W załączniku przesyłam zestawienie godzin pracy.";
+            }
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized("Invalid or missing user ID in token.");
+
+            var userEmail = await _context.Users
+                .Where(u => u.Id == userId)
+                .Select(u => u.Email)
+                .FirstOrDefaultAsync();
+
+            var fromEmail = string.IsNullOrWhiteSpace(userEmail)
+                ? "nasze@czteryswiaty.pl"
+                : userEmail;
+
+            try
+            {
+                await _emailService.SendEmailWithAttachmentAsync(
+                    recipient,
+                    userEmail,
+                    subject,
+                    body,
+                    file
+                );
+
+                return Ok("Mail został wysłany.");
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Błąd podczas wysyłki maila: {ex.Message}");
+            }
+        }
     }
 }
