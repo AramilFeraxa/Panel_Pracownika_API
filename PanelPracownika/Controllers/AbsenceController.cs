@@ -30,7 +30,8 @@ namespace PanelPracownika.Controllers
                 .Select(e => new
                 {
                     date = e.Date.ToString("yyyy-MM-dd"),
-                    type = e.Type
+                    type = e.Type,
+                    reason = e.Reason
                 })
                 .ToListAsync();
 
@@ -45,7 +46,10 @@ namespace PanelPracownika.Controllers
 
             var date = DateTime.SpecifyKind(dto.Date.Date, DateTimeKind.Utc);
 
-            if (date == default || string.IsNullOrEmpty(dto.Type)) return BadRequest("Niepoprawna data lub typ.");
+            if (date == default || string.IsNullOrEmpty(dto.Type) || string.IsNullOrEmpty(dto.Reason)) return BadRequest("Niepoprawna data, typ lub powód.");
+
+            if (!string.Equals(dto.Type, "Wyjazd", StringComparison.OrdinalIgnoreCase))
+                return BadRequest("Obsługiwany jest tylko typ Wyjazd.");
 
 
             bool exists = await _context.AbsenceDates
@@ -66,7 +70,8 @@ namespace PanelPracownika.Controllers
             {
                 UserId = userId.Value,
                 Date = date,
-                Type = dto.Type
+                Type = "Wyjazd",
+                Reason = dto.Reason
             };
 
             _context.AbsenceDates.Add(record);
@@ -109,13 +114,12 @@ namespace PanelPracownika.Controllers
 
             _context.AbsenceDates.Remove(record);
 
-            var workTime = await _context.WorkTimes
-                .FirstOrDefaultAsync(w => w.UserId == userId && w.Date.Date == dateOnly && w.Total == 0);
+            var workTimes = await _context.WorkTimes
+                .Where(w => w.UserId == userId && w.Date.Date == dateOnly)
+                .ToListAsync();
 
-            if (workTime != null)
-            {
-                _context.WorkTimes.Remove(workTime);
-            }
+            if (workTimes.Count > 0)
+                _context.WorkTimes.RemoveRange(workTimes);
 
             await _context.SaveChangesAsync();
             return NoContent();
@@ -133,5 +137,6 @@ namespace PanelPracownika.Controllers
     {
         public DateTime Date { get; set; }
         public string Type { get; set; }
+        public string Reason { get; set; }
     }
 }

@@ -4,9 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using PanelPracownika.Data;
 using PanelPracownika.Models;
 using System.Globalization;
-using System.Reflection.PortableExecutable;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace PanelPracownika.Controllers
 {
@@ -49,6 +47,7 @@ namespace PanelPracownika.Controllers
                     u.Username,
                     u.Name,
                     u.Surname,
+                    u.Email,
                     u.IsAdmin,
                     Salary = _context.UserSalaries.FirstOrDefault(s => s.UserId == u.Id)
                 })
@@ -67,6 +66,7 @@ namespace PanelPracownika.Controllers
                 Username = dto.Username,
                 Name = dto.Name,
                 Surname = dto.Surname,
+                Email = dto.Email,
                 Password = new Login().HashPassword(dto.Password),
                 IsAdmin = dto.IsAdmin
             };
@@ -84,6 +84,18 @@ namespace PanelPracownika.Controllers
 
             var user = await _context.Users.FindAsync(id);
             if (user == null) return NotFound();
+
+            var workTimes = _context.WorkTimes.Where(w => w.UserId == id);
+            var absences = _context.AbsenceDates.Where(a => a.UserId == id);
+            var salaries = _context.UserSalaries.Where(s => s.UserId == id);
+            var salaryRecords = _context.SalaryRecords.Where(s => s.UserId == id);
+            var tasks = _context.UserTasks.Where(t => t.UserId == id);
+
+            _context.WorkTimes.RemoveRange(workTimes);
+            _context.AbsenceDates.RemoveRange(absences);
+            _context.UserSalaries.RemoveRange(salaries);
+            _context.SalaryRecords.RemoveRange(salaryRecords);
+            _context.UserTasks.RemoveRange(tasks);
 
             _context.Users.Remove(user);
             await _context.SaveChangesAsync();
@@ -183,6 +195,9 @@ namespace PanelPracownika.Controllers
             if (!string.IsNullOrEmpty(dto.Surname))
                 user.Surname = dto.Surname;
 
+            if (!string.IsNullOrEmpty(dto.Email))
+                user.Email = dto.Email;
+
             if (!string.IsNullOrEmpty(dto.Password))
                 user.Password = new Login().HashPassword(dto.Password);
 
@@ -225,6 +240,116 @@ namespace PanelPracownika.Controllers
             return Ok(workTimes);
         }
 
+        [HttpGet("users/{userId}/absences")]
+        public async Task<IActionResult> GetUserAbsences(int userId, [FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound("Nie znaleziono użytkownika.");
+
+            var query = _context.AbsenceDates
+                .AsNoTracking()
+                .Where(a => a.UserId == userId);
+
+            if (startDate.HasValue)
+                query = query.Where(a => a.Date >= startDate.Value.Date);
+
+            if (endDate.HasValue)
+                query = query.Where(a => a.Date <= endDate.Value.Date);
+
+            var absences = await query
+                .OrderByDescending(a => a.Date)
+                .Select(a => new
+                {
+                    userId = a.UserId,
+                    user = new
+                    {
+                        id = user.Id,
+                        name = user.Name,
+                        surname = user.Surname,
+                        email = user.Email
+                    },
+                    date = a.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    type = a.Type,
+                    reason = a.Reason
+                })
+                .ToListAsync();
+
+            return Ok(absences);
+        }
+
+        [HttpGet("absences")]
+        public async Task<IActionResult> GetAllAbsences([FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var query = _context.AbsenceDates
+                .AsNoTracking()
+                .Include(a => a.User)
+                .AsQueryable();
+
+            if (startDate.HasValue)
+                query = query.Where(a => a.Date >= startDate.Value.Date);
+
+            if (endDate.HasValue)
+                query = query.Where(a => a.Date <= endDate.Value.Date);
+
+            var absences = await query
+                .OrderByDescending(a => a.Date)
+                .Select(a => new
+                {
+                    userId = a.UserId,
+                    user = new
+                    {
+                        id = a.User.Id,
+                        name = a.User.Name,
+                        surname = a.User.Surname,
+                        email = a.User.Email
+                    },
+                    date = a.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    type = a.Type,
+                    reason = a.Reason
+                })
+                .ToListAsync();
+
+            return Ok(absences);
+        }
+
+        [HttpGet("worktimes/day")]
+        public async Task<IActionResult> GetWorkTimesForDay([FromQuery] DateTime date)
+        {
+            if (!IsAdmin()) return Forbid();
+
+            var day = date.Date;
+
+            var workTimes = await _context.WorkTimes
+                .AsNoTracking()
+                .Include(w => w.User)
+                .Where(w => w.Date.Date == day)
+                .OrderBy(w => w.User.Name)
+                .ThenBy(w => w.StartTime)
+                .Select(w => new
+                {
+                    userId = w.UserId,
+                    user = new
+                    {
+                        id = w.User.Id,
+                        name = w.User.Name,
+                        surname = w.User.Surname,
+                        email = w.User.Email
+                    },
+                    date = w.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    startTime = w.StartTime,
+                    endTime = w.EndTime,
+                    total = w.Total,
+                    isRemote = w.IsRemote
+                })
+                .ToListAsync();
+
+            return Ok(workTimes);
+        }
+
     }
 
     public class CreateUserDto
@@ -232,6 +357,7 @@ namespace PanelPracownika.Controllers
         public string Username { get; set; }
         public string Name { get; set; }
         public string Surname { get; set; }
+        public string Email { get; set; }
         public string Password { get; set; }
         public bool IsAdmin { get; set; }
     }
@@ -254,6 +380,7 @@ namespace PanelPracownika.Controllers
         public string Username { get; set; }
         public string Name { get; set; }
         public string Surname { get; set; }
+        public string Email { get; set; }
         public string Password { get; set; }
         public bool? IsAdmin { get; set; }
     }

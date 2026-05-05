@@ -59,6 +59,7 @@ namespace PanelPracownika.Controllers
                     u.Username,
                     u.Name,
                     u.Surname,
+                    u.Email,
                     u.IsAdmin,
                     HasProfileImage = u.ProfileImage != null && u.ProfileImage.Length > 0
                 })
@@ -85,7 +86,8 @@ namespace PanelPracownika.Controllers
                 user.Username,
                 user.IsAdmin,
                 user.Name,
-                user.Surname
+                user.Surname,
+                user.Email
             });
         }
 
@@ -151,7 +153,8 @@ namespace PanelPracownika.Controllers
             {
                 user.Username,
                 user.Name,
-                user.Surname
+                user.Surname,
+                user.Email
             });
         }
 
@@ -169,6 +172,7 @@ namespace PanelPracownika.Controllers
 
             user.Name = dto.Name;
             user.Surname = dto.Surname;
+            user.Email = dto.Email;
 
             if (!string.IsNullOrEmpty(dto.NewPassword))
             {

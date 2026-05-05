@@ -12,10 +12,13 @@ namespace PanelPracownika.Models
         public DateTime Date { get; set; }
 
         [Required]
-        public string Type { get; set; }
+        public string? Type { get; set; }
+
+        [Required]
+        public string? Reason { get; set; }
 
         [ForeignKey("User")]
         public int UserId { get; set; }
-        public Login User { get; set; }
+        public Login? User { get; set; }
     }
 }
