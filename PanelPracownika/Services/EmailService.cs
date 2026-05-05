@@ -54,7 +54,7 @@ public class EmailService : IEmailService
                         Convert.ToBase64String(Encoding.ASCII.GetBytes($"api:{_emailSettings.MailgunApiKey}"))
                     )
                 },
-                Content = BuildMailgunContent(to, replyTo, subject, body, file)
+                Content = await BuildMailgunContentAsync(to, replyTo, subject, body, file)
             };
 
             _logger.LogInformation("Sending Mailgun request to domain {Domain}.", _emailSettings.MailgunDomain);
@@ -77,7 +77,7 @@ public class EmailService : IEmailService
         }
     }
 
-    private MultipartFormDataContent BuildMailgunContent(string to, string replyTo, string subject, string body, IFormFile file)
+    private async Task<MultipartFormDataContent> BuildMailgunContentAsync(string to, string replyTo, string subject, string body, IFormFile file)
     {
         var content = new MultipartFormDataContent
         {
@@ -95,7 +95,10 @@ public class EmailService : IEmailService
         if (file != null && file.Length > 0)
         {
             using var fileStream = file.OpenReadStream();
-            var fileContent = new StreamContent(fileStream);
+            await using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+
+            var fileContent = new ByteArrayContent(memoryStream.ToArray());
             if (!string.IsNullOrWhiteSpace(file.ContentType))
             {
                 fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(file.ContentType);
