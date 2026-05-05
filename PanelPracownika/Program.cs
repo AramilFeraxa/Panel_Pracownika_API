@@ -52,6 +52,8 @@ builder.Services.AddCors(options =>
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("EmailSettings"));
 
+builder.Services.AddHttpClient(nameof(EmailService));
+
 builder.Services.AddScoped<IEmailService, EmailService>();
 
 builder.Services.AddControllers();
