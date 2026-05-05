@@ -1,8 +1,8 @@
-﻿using MailKit.Net.Smtp;
-using MailKit.Security;
+﻿using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
-using MimeKit;
 using PanelPracownika.Models;
+using System.Text;
+using System.Text.Json;
 
 namespace PanelPracownika.Services;
 
@@ -10,11 +10,16 @@ public class EmailService : IEmailService
 {
     private readonly EmailSettings _emailSettings;
     private readonly ILogger<EmailService> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public EmailService(IOptions<EmailSettings> emailSettings, ILogger<EmailService> logger)
+    public EmailService(
+        IOptions<EmailSettings> emailSettings,
+        ILogger<EmailService> logger,
+        IHttpClientFactory httpClientFactory)
     {
         _emailSettings = emailSettings.Value;
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task SendEmailWithAttachmentAsync(
@@ -26,9 +31,8 @@ public class EmailService : IEmailService
     )
     {
         _logger.LogInformation(
-            "Preparing email. SmtpServerConfigured={SmtpServerConfigured}, Port={Port}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
-            !string.IsNullOrWhiteSpace(_emailSettings.SmtpServer),
-            _emailSettings.Port,
+            "Preparing Mailgun email. DomainConfigured={DomainConfigured}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
+            !string.IsNullOrWhiteSpace(_emailSettings.MailgunDomain),
             _emailSettings.SenderEmail,
             to,
             replyTo,
@@ -36,75 +40,70 @@ public class EmailService : IEmailService
             file != null && file.Length > 0
         );
 
-        var message = new MimeMessage();
-
-        message.From.Add(new MailboxAddress(
-            _emailSettings.SenderName,
-            _emailSettings.SenderEmail
-        ));
-
-        if (!string.IsNullOrWhiteSpace(replyTo) && !string.Equals(replyTo, _emailSettings.SenderEmail, StringComparison.OrdinalIgnoreCase))
-        {
-            message.ReplyTo.Add(MailboxAddress.Parse(replyTo));
-        }
-
-        message.To.Add(MailboxAddress.Parse(to));
-        message.Subject = subject;
-
-        var builder = new BodyBuilder
-        {
-            TextBody = body
-        };
-
-        if (file != null && file.Length > 0)
-        {
-            await using var memoryStream = new MemoryStream();
-            await file.CopyToAsync(memoryStream);
-
-            builder.Attachments.Add(
-                file.FileName,
-                memoryStream.ToArray(),
-                ContentType.Parse(file.ContentType)
-            );
-        }
-
-        message.Body = builder.ToMessageBody();
-
-        using var smtp = new MailKit.Net.Smtp.SmtpClient();
-
         try
         {
-            _logger.LogInformation(
-                "Connecting to SMTP server {SmtpServer}:{Port} using {SecureSocketOptions}.",
-                _emailSettings.SmtpServer,
-                _emailSettings.Port,
-                SecureSocketOptions.None
-            );
+            var client = _httpClientFactory.CreateClient(nameof(EmailService));
+            client.BaseAddress = new Uri($"https://api.mailgun.net/v3/{_emailSettings.MailgunDomain}/");
 
-            await smtp.ConnectAsync(
-                _emailSettings.SmtpServer,
-                _emailSettings.Port,
-                SecureSocketOptions.None
-            );
+            var request = new HttpRequestMessage(HttpMethod.Post, "messages")
+            {
+                Headers =
+                {
+                    Authorization = new AuthenticationHeaderValue(
+                        "Basic",
+                        Convert.ToBase64String(Encoding.ASCII.GetBytes($"api:{_emailSettings.MailgunApiKey}"))
+                    )
+                },
+                Content = BuildMailgunContent(to, replyTo, subject, body, file)
+            };
 
-            _logger.LogInformation("Authenticating to SMTP server as {Username}.", _emailSettings.Username);
+            _logger.LogInformation("Sending Mailgun request to domain {Domain}.", _emailSettings.MailgunDomain);
 
-            await smtp.AuthenticateAsync(
-                _emailSettings.Username,
-                _emailSettings.Password
-            );
+            using var response = await client.SendAsync(request);
+            var responseBody = await response.Content.ReadAsStringAsync();
 
-            _logger.LogInformation("Sending email to {To}.", to);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("Mailgun request failed with status {StatusCode}. Response={ResponseBody}", response.StatusCode, responseBody);
+                throw new InvalidOperationException($"Mailgun request failed with status {(int)response.StatusCode}: {responseBody}");
+            }
 
-            await smtp.SendAsync(message);
-            await smtp.DisconnectAsync(true);
-
-            _logger.LogInformation("SMTP send completed successfully.");
+            _logger.LogInformation("Mailgun send completed successfully. Response={ResponseBody}", responseBody);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "SMTP send failed. Server={SmtpServer}, Port={Port}, To={To}", _emailSettings.SmtpServer, _emailSettings.Port, to);
+            _logger.LogError(ex, "Mailgun send failed. Domain={Domain}, To={To}", _emailSettings.MailgunDomain, to);
             throw;
         }
+    }
+
+    private MultipartFormDataContent BuildMailgunContent(string to, string replyTo, string subject, string body, IFormFile file)
+    {
+        var content = new MultipartFormDataContent
+        {
+            { new StringContent($"{_emailSettings.SenderName} <{_emailSettings.SenderEmail}>", Encoding.UTF8), "from" },
+            { new StringContent(to, Encoding.UTF8), "to" },
+            { new StringContent(subject, Encoding.UTF8), "subject" },
+            { new StringContent(body, Encoding.UTF8), "text" }
+        };
+
+        if (!string.IsNullOrWhiteSpace(replyTo))
+        {
+            content.Add(new StringContent(replyTo, Encoding.UTF8), "h:Reply-To");
+        }
+
+        if (file != null && file.Length > 0)
+        {
+            using var fileStream = file.OpenReadStream();
+            var fileContent = new StreamContent(fileStream);
+            if (!string.IsNullOrWhiteSpace(file.ContentType))
+            {
+                fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(file.ContentType);
+            }
+
+            content.Add(fileContent, "attachment", file.FileName);
+        }
+
+        return content;
     }
 }
