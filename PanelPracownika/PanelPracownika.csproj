@@ -3,6 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>fbced4e1-ba1a-4847-9e64-e07da18b52c2</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Models\UpdateUserAdminDto.cs" />
