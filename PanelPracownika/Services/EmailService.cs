@@ -3,17 +3,18 @@ using MailKit.Security;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using PanelPracownika.Models;
-using System.Net.Mail;
 
 namespace PanelPracownika.Services;
 
 public class EmailService : IEmailService
 {
     private readonly EmailSettings _emailSettings;
+    private readonly ILogger<EmailService> _logger;
 
-    public EmailService(IOptions<EmailSettings> emailSettings)
+    public EmailService(IOptions<EmailSettings> emailSettings, ILogger<EmailService> logger)
     {
         _emailSettings = emailSettings.Value;
+        _logger = logger;
     }
 
     public async Task SendEmailWithAttachmentAsync(
@@ -24,6 +25,17 @@ public class EmailService : IEmailService
         IFormFile file
     )
     {
+        _logger.LogInformation(
+            "Preparing email. SmtpServerConfigured={SmtpServerConfigured}, Port={Port}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
+            !string.IsNullOrWhiteSpace(_emailSettings.SmtpServer),
+            _emailSettings.Port,
+            _emailSettings.SenderEmail,
+            to,
+            replyTo,
+            subject?.Length ?? 0,
+            file != null && file.Length > 0
+        );
+
         var message = new MimeMessage();
 
         message.From.Add(new MailboxAddress(
@@ -60,18 +72,39 @@ public class EmailService : IEmailService
 
         using var smtp = new MailKit.Net.Smtp.SmtpClient();
 
-        await smtp.ConnectAsync(
-            _emailSettings.SmtpServer,
-            _emailSettings.Port,
-            SecureSocketOptions.StartTls
-        );
+        try
+        {
+            _logger.LogInformation(
+                "Connecting to SMTP server {SmtpServer}:{Port} using {SecureSocketOptions}.",
+                _emailSettings.SmtpServer,
+                _emailSettings.Port,
+                SecureSocketOptions.StartTls
+            );
 
-        await smtp.AuthenticateAsync(
-            _emailSettings.Username,
-            _emailSettings.Password
-        );
+            await smtp.ConnectAsync(
+                _emailSettings.SmtpServer,
+                _emailSettings.Port,
+                SecureSocketOptions.StartTls
+            );
 
-        await smtp.SendAsync(message);
-        await smtp.DisconnectAsync(true);
+            _logger.LogInformation("Authenticating to SMTP server as {Username}.", _emailSettings.Username);
+
+            await smtp.AuthenticateAsync(
+                _emailSettings.Username,
+                _emailSettings.Password
+            );
+
+            _logger.LogInformation("Sending email to {To}.", to);
+
+            await smtp.SendAsync(message);
+            await smtp.DisconnectAsync(true);
+
+            _logger.LogInformation("SMTP send completed successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SMTP send failed. Server={SmtpServer}, Port={Port}, To={To}", _emailSettings.SmtpServer, _emailSettings.Port, to);
+            throw;
+        }
     }
 }

@@ -17,12 +17,18 @@ namespace PanelPracownika.Controllers
         private readonly AppDbContext _context;
         private readonly IEmailService _emailService;
         private readonly EmailSettings _emailSettings;
+        private readonly ILogger<WorkTimeController> _logger;
 
-        public WorkTimeController(AppDbContext context, IEmailService emailService, IOptions<EmailSettings> emailSettings)
+        public WorkTimeController(
+            AppDbContext context,
+            IEmailService emailService,
+            IOptions<EmailSettings> emailSettings,
+            ILogger<WorkTimeController> logger)
         {
             _context = context;
             _emailService = emailService;
             _emailSettings = emailSettings.Value;
+            _logger = logger;
         }
 
         [Authorize]
@@ -135,8 +141,19 @@ namespace PanelPracownika.Controllers
         {
             var recipient = _emailSettings.RecipientEmail;
 
+            _logger.LogInformation(
+                "SendHoursEmail started. FilePresent={FilePresent}, FileName={FileName}, FileLength={FileLength}, SubjectLength={SubjectLength}, RecipientConfigured={RecipientConfigured}, FromConfigured={FromConfigured}",
+                file != null,
+                file?.FileName,
+                file?.Length,
+                subject?.Length ?? 0,
+                !string.IsNullOrWhiteSpace(recipient),
+                !string.IsNullOrWhiteSpace(_emailSettings.FromEmail)
+            );
+
             if (string.IsNullOrWhiteSpace(recipient))
             {
+                _logger.LogWarning("Email recipient is not configured in EmailSettings.RecipientEmail.");
                 return StatusCode(500, "Brak skonfigurowanego adresu odbiorcy w secrets.json.");
             }
 
@@ -168,13 +185,22 @@ namespace PanelPracownika.Controllers
                 ? userEmail
                 : _emailSettings.FromEmail;
 
+            _logger.LogInformation(
+                "Resolved email addresses. UserEmailPresent={UserEmailPresent}, FromEmailResolved={FromEmailResolved}, Recipient={Recipient}",
+                !string.IsNullOrWhiteSpace(userEmail),
+                fromEmail,
+                recipient
+            );
+
             if (string.IsNullOrWhiteSpace(fromEmail))
             {
+                _logger.LogWarning("Email from address is not configured and user email is empty.");
                 return StatusCode(500, "Brak skonfigurowanego adresu nadawcy w secrets.json.");
             }
 
             try
             {
+                _logger.LogInformation("Sending hours email.");
                 await _emailService.SendEmailWithAttachmentAsync(
                     recipient,
                     fromEmail,
@@ -183,10 +209,12 @@ namespace PanelPracownika.Controllers
                     file
                 );
 
+                _logger.LogInformation("Hours email sent successfully.");
                 return Ok("Mail został wysłany.");
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Failed to send hours email.");
                 return StatusCode(500, $"Błąd podczas wysyłki maila: {ex.Message}");
             }
         }
