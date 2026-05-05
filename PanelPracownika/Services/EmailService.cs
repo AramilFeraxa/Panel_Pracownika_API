@@ -30,9 +30,14 @@ public class EmailService : IEmailService
         IFormFile file
     )
     {
+        var fromAddress = string.IsNullOrWhiteSpace(_emailSettings.FromEmail)
+            ? _emailSettings.SenderEmail
+            : _emailSettings.FromEmail;
+
         _logger.LogInformation(
-            "Preparing Mailgun email. DomainConfigured={DomainConfigured}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
+            "Preparing Mailgun email. DomainConfigured={DomainConfigured}, FromAddress={FromAddress}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
             !string.IsNullOrWhiteSpace(_emailSettings.MailgunDomain),
+            fromAddress,
             _emailSettings.SenderEmail,
             to,
             replyTo,
@@ -54,7 +59,7 @@ public class EmailService : IEmailService
                         Convert.ToBase64String(Encoding.ASCII.GetBytes($"api:{_emailSettings.MailgunApiKey}"))
                     )
                 },
-                Content = await BuildMailgunContentAsync(to, replyTo, subject, body, file)
+                Content = await BuildMailgunContentAsync(fromAddress, to, replyTo, subject, body, file)
             };
 
             _logger.LogInformation("Sending Mailgun request to domain {Domain}.", _emailSettings.MailgunDomain);
@@ -77,11 +82,11 @@ public class EmailService : IEmailService
         }
     }
 
-    private async Task<MultipartFormDataContent> BuildMailgunContentAsync(string to, string replyTo, string subject, string body, IFormFile file)
+    private async Task<MultipartFormDataContent> BuildMailgunContentAsync(string fromAddress, string to, string replyTo, string subject, string body, IFormFile file)
     {
         var content = new MultipartFormDataContent
         {
-            { new StringContent($"{_emailSettings.SenderName} <{_emailSettings.SenderEmail}>", Encoding.UTF8), "from" },
+            { new StringContent($"{_emailSettings.SenderName} <{fromAddress}>", Encoding.UTF8), "from" },
             { new StringContent(to, Encoding.UTF8), "to" },
             { new StringContent(subject, Encoding.UTF8), "subject" },
             { new StringContent(body, Encoding.UTF8), "text" }

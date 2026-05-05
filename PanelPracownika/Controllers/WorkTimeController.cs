@@ -185,10 +185,15 @@ namespace PanelPracownika.Controllers
                 ? userEmail
                 : _emailSettings.FromEmail;
 
+            var replyToEmail = string.IsNullOrWhiteSpace(userEmail)
+                ? fromEmail
+                : userEmail;
+
             _logger.LogInformation(
-                "Resolved email addresses. UserEmailPresent={UserEmailPresent}, FromEmailResolved={FromEmailResolved}, Recipient={Recipient}",
+                "Resolved email addresses. UserEmailPresent={UserEmailPresent}, FromEmailResolved={FromEmailResolved}, ReplyToResolved={ReplyToResolved}, Recipient={Recipient}",
                 !string.IsNullOrWhiteSpace(userEmail),
                 fromEmail,
+                replyToEmail,
                 recipient
             );
 
@@ -203,7 +208,7 @@ namespace PanelPracownika.Controllers
                 _logger.LogInformation("Sending hours email.");
                 await _emailService.SendEmailWithAttachmentAsync(
                     recipient,
-                    fromEmail,
+                    replyToEmail,
                     subject,
                     body,
                     file
