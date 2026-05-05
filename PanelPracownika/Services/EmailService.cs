@@ -78,13 +78,13 @@ public class EmailService : IEmailService
                 "Connecting to SMTP server {SmtpServer}:{Port} using {SecureSocketOptions}.",
                 _emailSettings.SmtpServer,
                 _emailSettings.Port,
-                SecureSocketOptions.SslOnConnect
+                SecureSocketOptions.None
             );
 
             await smtp.ConnectAsync(
                 _emailSettings.SmtpServer,
                 _emailSettings.Port,
-                SecureSocketOptions.SslOnConnect
+                SecureSocketOptions.None
             );
 
             _logger.LogInformation("Authenticating to SMTP server as {Username}.", _emailSettings.Username);
