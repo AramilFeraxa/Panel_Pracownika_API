@@ -22,6 +22,11 @@ public class EmailService : IEmailService
         _httpClientFactory = httpClientFactory;
     }
 
+    public async Task SendEmailAsync(string to, string subject, string body)
+    {
+        await SendMessageAsync(to, null, subject, body, null);
+    }
+
     public async Task SendEmailWithAttachmentAsync(
         string to,
         string replyTo,
@@ -29,6 +34,16 @@ public class EmailService : IEmailService
         string body,
         IFormFile file
     )
+    {
+        await SendMessageAsync(to, replyTo, subject, body, file);
+    }
+
+    private async Task SendMessageAsync(
+        string to,
+        string replyTo,
+        string subject,
+        string body,
+        IFormFile file)
     {
         var fromAddress = string.IsNullOrWhiteSpace(_emailSettings.FromEmail)
             ? _emailSettings.SenderEmail

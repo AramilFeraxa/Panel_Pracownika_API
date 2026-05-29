@@ -5,6 +5,7 @@ using PanelPracownika.Data;
 using PanelPracownika.Models;
 using System.Globalization;
 using System.Security.Claims;
+using PanelPracownika.Services;
 
 namespace PanelPracownika.Controllers
 {
@@ -14,10 +15,12 @@ namespace PanelPracownika.Controllers
     public class AdminController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
 
-        public AdminController(AppDbContext context)
+        public AdminController(AppDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         private int? GetUserId()
@@ -73,6 +76,27 @@ namespace PanelPracownika.Controllers
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(user.Email))
+            {
+                var welcomeMessage = $"""
+Cześć {user.Name} {user.Surname},
+
+witamy w Panelu Pracownika.
+
+Twój panel jest dostępny tutaj: https://panel.xce.pl
+
+Twoje dane logowania:
+Login: {user.Username}
+Hasło: {dto.Password}
+""";
+
+                await _emailService.SendEmailAsync(
+                    user.Email,
+                    "Witamy w Panelu Pracownika",
+                    welcomeMessage
+                );
+            }
 
             return Ok(user);
         }
