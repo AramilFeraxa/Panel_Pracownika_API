@@ -1,5 +1,4 @@
-﻿using System.Net.Http.Headers;
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 using PanelPracownika.Models;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +7,7 @@ namespace PanelPracownika.Services;
 
 public class EmailService : IEmailService
 {
+    private const string SendGridEndpoint = "https://api.sendgrid.com/v3/mail/send";
     private readonly EmailSettings _emailSettings;
     private readonly ILogger<EmailService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -46,14 +46,14 @@ public class EmailService : IEmailService
         IFormFile file)
     {
         var fromAddress = string.IsNullOrWhiteSpace(_emailSettings.FromEmail)
-            ? _emailSettings.SenderEmail
+            ? _emailSettings.SendGridSenderEmail
             : _emailSettings.FromEmail;
 
         _logger.LogInformation(
-            "Preparing Mailgun email. DomainConfigured={DomainConfigured}, FromAddress={FromAddress}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
-            !string.IsNullOrWhiteSpace(_emailSettings.MailgunDomain),
+            "Preparing SendGrid email. SenderConfigured={SenderConfigured}, FromAddress={FromAddress}, SenderEmail={SenderEmail}, To={To}, ReplyTo={ReplyTo}, SubjectLength={SubjectLength}, HasAttachment={HasAttachment}",
+            !string.IsNullOrWhiteSpace(_emailSettings.SendGridApiKey),
             fromAddress,
-            _emailSettings.SenderEmail,
+            _emailSettings.SendGridSenderEmail,
             to,
             replyTo,
             subject?.Length ?? 0,
@@ -63,70 +63,59 @@ public class EmailService : IEmailService
         try
         {
             var client = _httpClientFactory.CreateClient(nameof(EmailService));
-            client.BaseAddress = new Uri($"https://api.mailgun.net/v3/{_emailSettings.MailgunDomain}/");
-
-            var request = new HttpRequestMessage(HttpMethod.Post, "messages")
+            var request = new HttpRequestMessage(HttpMethod.Post, SendGridEndpoint)
             {
                 Headers =
                 {
-                    Authorization = new AuthenticationHeaderValue(
-                        "Basic",
-                        Convert.ToBase64String(Encoding.ASCII.GetBytes($"api:{_emailSettings.MailgunApiKey}"))
-                    )
+                    Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _emailSettings.SendGridApiKey)
                 },
-                Content = await BuildMailgunContentAsync(fromAddress, to, replyTo, subject, body, file)
+                Content = await BuildSendGridContentAsync(fromAddress, to, replyTo, subject, body, file)
             };
 
-            _logger.LogInformation("Sending Mailgun request to domain {Domain}.", _emailSettings.MailgunDomain);
+            _logger.LogInformation("Sending SendGrid request.");
 
             using var response = await client.SendAsync(request);
             var responseBody = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Mailgun request failed with status {StatusCode}. Response={ResponseBody}", response.StatusCode, responseBody);
-                throw new InvalidOperationException($"Mailgun request failed with status {(int)response.StatusCode}: {responseBody}");
+                _logger.LogError("SendGrid request failed with status {StatusCode}. Response={ResponseBody}", response.StatusCode, responseBody);
+                throw new InvalidOperationException($"SendGrid request failed with status {(int)response.StatusCode}: {responseBody}");
             }
 
-            _logger.LogInformation("Mailgun send completed successfully. Response={ResponseBody}", responseBody);
+            _logger.LogInformation("SendGrid send completed successfully. Response={ResponseBody}", responseBody);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Mailgun send failed. Domain={Domain}, To={To}", _emailSettings.MailgunDomain, to);
+            _logger.LogError(ex, "SendGrid send failed. To={To}", to);
             throw;
         }
     }
 
-    private async Task<MultipartFormDataContent> BuildMailgunContentAsync(string fromAddress, string to, string replyTo, string subject, string body, IFormFile file)
+    private Task<StringContent> BuildSendGridContentAsync(string fromAddress, string to, string replyTo, string subject, string body, IFormFile file)
     {
-        var content = new MultipartFormDataContent
+        var payload = new
         {
-            { new StringContent($"{_emailSettings.SenderName} <{fromAddress}>", Encoding.UTF8), "from" },
-            { new StringContent(to, Encoding.UTF8), "to" },
-            { new StringContent(subject, Encoding.UTF8), "subject" },
-            { new StringContent(body, Encoding.UTF8), "text" }
+            personalizations = new[]
+            {
+                new
+                {
+                    to = new[] { new { email = to } },
+                    subject
+                }
+            },
+            from = new { email = fromAddress, name = _emailSettings.SenderName },
+            reply_to = string.IsNullOrWhiteSpace(replyTo) ? null : new { email = replyTo },
+            content = new[]
+            {
+                new
+                {
+                    type = "text/plain",
+                    value = body
+                }
+            }
         };
 
-        if (!string.IsNullOrWhiteSpace(replyTo))
-        {
-            content.Add(new StringContent(replyTo, Encoding.UTF8), "h:Reply-To");
-        }
-
-        if (file != null && file.Length > 0)
-        {
-            using var fileStream = file.OpenReadStream();
-            await using var memoryStream = new MemoryStream();
-            await fileStream.CopyToAsync(memoryStream);
-
-            var fileContent = new ByteArrayContent(memoryStream.ToArray());
-            if (!string.IsNullOrWhiteSpace(file.ContentType))
-            {
-                fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(file.ContentType);
-            }
-
-            content.Add(fileContent, "attachment", file.FileName);
-        }
-
-        return content;
+        return Task.FromResult(new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
     }
 }
