@@ -2,6 +2,7 @@
 using PanelPracownika.Models;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PanelPracownika.Services;
 
@@ -92,8 +93,27 @@ public class EmailService : IEmailService
         }
     }
 
-    private Task<StringContent> BuildSendGridContentAsync(string fromAddress, string to, string replyTo, string subject, string body, IFormFile file)
+    private async Task<StringContent> BuildSendGridContentAsync(string fromAddress, string to, string replyTo, string subject, string body, IFormFile file)
     {
+        var attachments = new List<object>();
+
+        if (file != null && file.Length > 0)
+        {
+            using (var memoryStream = new MemoryStream())
+            {
+                await file.CopyToAsync(memoryStream);
+                var fileContent = Convert.ToBase64String(memoryStream.ToArray());
+
+                attachments.Add(new
+                {
+                    content = fileContent,
+                    type = file.ContentType,
+                    filename = file.FileName,
+                    disposition = "attachment"
+                });
+            }
+        }
+
         var payload = new
         {
             personalizations = new[]
@@ -113,9 +133,11 @@ public class EmailService : IEmailService
                     type = "text/plain",
                     value = body
                 }
-            }
+            },
+            attachments = attachments.Count > 0 ? attachments : null
         };
 
-        return Task.FromResult(new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+        return new StringContent(json, Encoding.UTF8, "application/json");
     }
 }
