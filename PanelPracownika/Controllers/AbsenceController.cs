@@ -38,6 +38,45 @@ namespace PanelPracownika.Controllers
             return Ok(dates);
         }
 
+        [HttpGet("calendar")]
+        public async Task<IActionResult> GetCalendarAbsences([FromQuery] DateTime? startDate = null, [FromQuery] DateTime? endDate = null)
+        {
+            var userId = GetUserId();
+            if (userId == null) return Unauthorized();
+
+            var query = _context.AbsenceDates
+                .AsNoTracking()
+                .Include(a => a.User)
+                .AsQueryable();
+
+            if (startDate.HasValue)
+                query = query.Where(a => a.Date >= startDate.Value.Date);
+
+            if (endDate.HasValue)
+                query = query.Where(a => a.Date <= endDate.Value.Date);
+
+            var absences = await query
+                .OrderBy(a => a.Date)
+                .ThenBy(a => a.User != null ? a.User.Surname : string.Empty)
+                .ThenBy(a => a.User != null ? a.User.Name : string.Empty)
+                .Select(a => new
+                {
+                    userId = a.UserId,
+                    user = new
+                    {
+                        id = a.UserId,
+                        name = a.User != null ? a.User.Name : string.Empty,
+                        surname = a.User != null ? a.User.Surname : string.Empty
+                    },
+                    date = a.Date.ToString("yyyy-MM-dd"),
+                    type = a.Type,
+                    reason = a.Reason
+                })
+                .ToListAsync();
+
+            return Ok(absences);
+        }
+
         [HttpPost]
         public async Task<IActionResult> AddAbsence([FromBody] AddAbsenceDto dto)
         {
