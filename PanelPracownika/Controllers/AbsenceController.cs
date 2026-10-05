@@ -91,6 +91,7 @@ namespace PanelPracownika.Controllers
                 return BadRequest("Obsługiwany jest tylko typ Wyjazd.");
 
 
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             bool exists = await _context.AbsenceDates
                 .AnyAsync(d => d.UserId == userId && d.Date.Date == date);
 
@@ -100,7 +101,7 @@ namespace PanelPracownika.Controllers
             var existingWorkTime = await _context.WorkTimes
                 .FirstOrDefaultAsync(w => w.UserId == userId && w.Date.Date == date);
 
-            if (existingWorkTime != null && existingWorkTime.Total > 0)
+            if (await _context.WorkTimes.AnyAsync(w => w.UserId == userId && w.Date.Date == date && w.Total > 0))
             {
                 return Conflict("W tym dniu już istnieje wpis z godzinami pracy, nie można dodać delegacji.");
             }
@@ -130,6 +131,7 @@ namespace PanelPracownika.Controllers
             }
 
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
             return Ok();
         }
 
@@ -154,7 +156,7 @@ namespace PanelPracownika.Controllers
             _context.AbsenceDates.Remove(record);
 
             var workTimes = await _context.WorkTimes
-                .Where(w => w.UserId == userId && w.Date.Date == dateOnly)
+                .Where(w => w.UserId == userId && w.Date.Date == dateOnly && w.Total == 0)
                 .ToListAsync();
 
             if (workTimes.Count > 0)

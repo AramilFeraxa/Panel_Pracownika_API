@@ -44,12 +44,8 @@ namespace PanelPracownika.Controllers
             var workTimes = await _context.WorkTimes
                 .Where(w => w.UserId == userId)
                 .OrderBy(w => w.Date)
+                .ThenBy(w => w.StartTime)
                 .ToListAsync();
-
-            if (workTimes == null || workTimes.Count == 0)
-            {
-                return NotFound("No work times found for this user.");
-            }
 
             return Ok(workTimes);
         }
@@ -61,24 +57,52 @@ namespace PanelPracownika.Controllers
             if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
                 return Unauthorized("Invalid or missing user ID in token.");
 
-            if (!TimeSpan.TryParse(dto.StartTime, out TimeSpan start) || !TimeSpan.TryParse(dto.EndTime, out TimeSpan end))
-                return BadRequest("Invalid time format.");
-
-            var workTime = new WorkTime
+            return await AddPeriods(userId, dto.Date, new List<WorkPeriodDto>
             {
-                Date = dto.Date,
-                StartTime = dto.StartTime,
-                EndTime = dto.EndTime,
-                UserId = userId,
-                IsRemote = dto.IsRemote
-            };
+                new() { StartTime = dto.StartTime, EndTime = dto.EndTime, IsRemote = dto.IsRemote }
+            }, single: true);
+        }
 
-            workTime.SetTotal(start, end);
+        [HttpPost("periods")]
+        public async Task<IActionResult> PostWorkPeriods([FromBody] WorkTimePeriodsDto dto)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+                return Unauthorized();
+            return await AddPeriods(userId, dto.Date, dto.Periods);
+        }
 
-            _context.WorkTimes.Add(workTime);
+        private async Task<ActionResult> AddPeriods(int userId, DateTime date, List<WorkPeriodDto>? periods, bool single = false)
+        {
+            if (date.Date == default) return BadRequest("Wybierz poprawną datę.");
+            var day = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+            var validation = WorkPeriodValidation.Validate(periods, Array.Empty<WorkTime>());
+            if (validation != null) return BadRequest(validation);
+
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            if (await _context.AbsenceDates.AnyAsync(a => a.UserId == userId && a.Date.Date == day))
+                return Conflict("W tym dniu zapisano nieobecność. Usuń ją przed dodaniem godzin pracy.");
+            var existing = await _context.WorkTimes.Where(w => w.UserId == userId && w.Date.Date == day).ToListAsync();
+            validation = WorkPeriodValidation.Validate(periods, existing);
+            if (validation != null) return Conflict(validation);
+
+            var entries = periods!.Select(period =>
+            {
+                WorkPeriodValidation.TryParse(period.StartTime, out var start);
+                WorkPeriodValidation.TryParse(period.EndTime, out var end);
+                var entry = new WorkTime
+                {
+                    Date = day, UserId = userId, StartTime = start.ToString(@"hh\:mm"),
+                    EndTime = end.ToString(@"hh\:mm"), IsRemote = period.IsRemote
+                };
+                entry.SetTotal(start, end);
+                return entry;
+            }).ToList();
+            _context.WorkTimes.RemoveRange(existing.Where(w => w.Total == 0));
+            _context.WorkTimes.AddRange(entries);
             await _context.SaveChangesAsync();
-
-            return Ok(workTime);
+            await transaction.CommitAsync();
+            return single ? Ok(entries[0]) : Ok(entries);
         }
 
         [HttpPut("{id}")]
@@ -91,22 +115,36 @@ namespace PanelPracownika.Controllers
             if (dto.Id != id)
                 return BadRequest("ID mismatch");
 
+            if (dto.Date.Date == default) return BadRequest("Wybierz poprawną datę.");
+            var day = DateTime.SpecifyKind(dto.Date.Date, DateTimeKind.Utc);
+            var periods = new List<WorkPeriodDto>
+            {
+                new() { StartTime = dto.StartTime, EndTime = dto.EndTime, IsRemote = dto.IsRemote }
+            };
+            var validation = WorkPeriodValidation.Validate(periods, Array.Empty<WorkTime>());
+            if (validation != null) return BadRequest(validation);
+            await using var transaction = await _context.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             var workTime = await _context.WorkTimes.FindAsync(id);
             if (workTime == null || workTime.UserId != userId)
                 return NotFound();
 
-            workTime.Date = dto.Date;
-            workTime.StartTime = dto.StartTime;
-            workTime.EndTime = dto.EndTime;
+            if (await _context.AbsenceDates.AnyAsync(a => a.UserId == userId && a.Date.Date == day))
+                return Conflict("W tym dniu zapisano nieobecność. Usuń ją przed dodaniem godzin pracy.");
+            var existing = await _context.WorkTimes.Where(w => w.UserId == userId && w.Date.Date == day && w.Id != id).ToListAsync();
+            validation = WorkPeriodValidation.Validate(periods, existing);
+            if (validation != null) return Conflict(validation);
+            WorkPeriodValidation.TryParse(dto.StartTime, out var start);
+            WorkPeriodValidation.TryParse(dto.EndTime, out var end);
+            workTime.Date = day;
+            workTime.StartTime = start.ToString(@"hh\:mm");
+            workTime.EndTime = end.ToString(@"hh\:mm");
             workTime.IsRemote = dto.IsRemote;
-
-            if (!TimeSpan.TryParse(dto.StartTime, out TimeSpan start) || !TimeSpan.TryParse(dto.EndTime, out TimeSpan end))
-                return BadRequest("Invalid time format.");
 
             workTime.SetTotal(start, end);
 
             _context.Entry(workTime).State = EntityState.Modified;
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return NoContent();
         }
