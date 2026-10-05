@@ -95,6 +95,16 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw("ALTER TABLE `AbsenceDates` ADD COLUMN `Reason` longtext NOT NULL DEFAULT ''");
     }
 
+    // Additive schema changes keep existing users and historical calculations unchanged.
+    if (!ColumnExists("UserSalaries", "HasSecondaryContract"))
+        db.Database.ExecuteSqlRaw("ALTER TABLE `UserSalaries` ADD COLUMN `HasSecondaryContract` tinyint(1) NOT NULL DEFAULT 0");
+    if (!ColumnExists("UserSalaries", "SecondaryHourlyRate"))
+        db.Database.ExecuteSqlRaw("ALTER TABLE `UserSalaries` ADD COLUMN `SecondaryHourlyRate` double NULL");
+    if (!ColumnExists("UserSalaries", "SecondaryMonthlyHours"))
+        db.Database.ExecuteSqlRaw("ALTER TABLE `UserSalaries` ADD COLUMN `SecondaryMonthlyHours` double NULL");
+    if (!ColumnExists("SalaryRecords", "CalculationDetails"))
+        db.Database.ExecuteSqlRaw("ALTER TABLE `SalaryRecords` ADD COLUMN `CalculationDetails` longtext NULL");
+
     var absences = await db.AbsenceDates.ToListAsync();
     foreach (var absence in absences)
     {

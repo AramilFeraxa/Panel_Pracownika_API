@@ -131,7 +131,18 @@ Hasło: {dto.Password}
         {
             if (!IsAdmin()) return Forbid();
 
+            if (!await _context.Users.AnyAsync(u => u.Id == id))
+                return NotFound("Nie znaleziono użytkownika.");
             var salary = await _context.UserSalaries.FirstOrDefaultAsync(s => s.UserId == id);
+            var candidate = new UserSalary
+            {
+                ContractType = dto.ContractType, HourlyRate = dto.HourlyRate,
+                HasSecondaryContract = dto.HasSecondaryContract ?? salary?.HasSecondaryContract ?? false,
+                SecondaryHourlyRate = dto.HasSecondaryContract.HasValue ? dto.SecondaryHourlyRate : salary?.SecondaryHourlyRate,
+                SecondaryMonthlyHours = dto.HasSecondaryContract.HasValue ? dto.SecondaryMonthlyHours : salary?.SecondaryMonthlyHours
+            };
+            var validation = SalaryCalculation.ValidateSecondaryContract(candidate);
+            if (validation != null) return BadRequest(validation);
             if (salary == null)
             {
                 salary = new UserSalary { UserId = id };
@@ -141,6 +152,9 @@ Hasło: {dto.Password}
             salary.ContractType = dto.ContractType;
             salary.HourlyRate = dto.HourlyRate;
             salary.MonthlySalary = dto.MonthlySalary;
+            salary.HasSecondaryContract = candidate.HasSecondaryContract;
+            salary.SecondaryHourlyRate = candidate.HasSecondaryContract ? candidate.SecondaryHourlyRate : null;
+            salary.SecondaryMonthlyHours = candidate.HasSecondaryContract ? candidate.SecondaryMonthlyHours : null;
 
             await _context.SaveChangesAsync();
             return Ok(salary);
@@ -391,6 +405,9 @@ Hasło: {dto.Password}
         public string ContractType { get; set; }
         public double? HourlyRate { get; set; }
         public double? MonthlySalary { get; set; }
+        public bool? HasSecondaryContract { get; set; }
+        public double? SecondaryHourlyRate { get; set; }
+        public double? SecondaryMonthlyHours { get; set; }
     }
 
     public class CreateTaskDto

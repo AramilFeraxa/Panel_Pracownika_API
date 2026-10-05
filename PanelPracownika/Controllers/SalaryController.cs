@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PanelPracownika.Data;
 using PanelPracownika.Models;
+using PanelPracownika.Services;
 using System.Security.Claims;
 
 namespace PanelPracownika.Controllers
@@ -46,17 +47,40 @@ namespace PanelPracownika.Controllers
             return Ok(records);
         }
 
+        [HttpGet("preview")]
+        public async Task<IActionResult> PreviewSalary([FromQuery] int year, [FromQuery] int month)
+        {
+            var userId = GetUserId();
+            if (userId == null) return Unauthorized();
+            if (year < 1 || year > 9999 || month < 1 || month > 12)
+                return BadRequest("Wybierz poprawny rok i miesiąc.");
+            var salary = await _context.UserSalaries.FirstOrDefaultAsync(s => s.UserId == userId);
+            if (salary == null) return NotFound("Brak danych o wynagrodzeniu.");
+            if (!salary.HasSecondaryContract) return NoContent();
+            var validation = SalaryCalculation.ValidateSecondaryContract(salary);
+            if (validation != null) return BadRequest(validation);
+            var hours = await _context.WorkTimes
+                .Where(w => w.UserId == userId && w.Date.Year == year && w.Date.Month == month)
+                .SumAsync(w => w.Total);
+            return Ok(SalaryCalculation.CalculateSecondaryContract(salary, hours));
+        }
+
         [HttpPost("generate")]
         public async Task<IActionResult> GenerateSalary([FromBody] GenerateSalaryDto dto)
         {
             var userId = GetUserId();
             if (userId == null) return Unauthorized();
 
+            if (dto.Year < 1 || dto.Year > 9999 || dto.Month < 1 || dto.Month > 12)
+                return BadRequest("Wybierz poprawny rok i miesiąc.");
             var salaryInfo = await _context.UserSalaries.FirstOrDefaultAsync(u => u.UserId == userId);
             if (salaryInfo == null)
                 return NotFound("Nie znaleziono danych o umowie użytkownika.");
 
             double amount = 0;
+            SalaryBreakdown? breakdown = null;
+            var validation = SalaryCalculation.ValidateSecondaryContract(salaryInfo);
+            if (validation != null) return BadRequest(validation);
 
             if (salaryInfo.ContractType == "Umowa zlecenie")
             {
@@ -64,7 +88,15 @@ namespace PanelPracownika.Controllers
                     .Where(w => w.UserId == userId && w.Date.Year == dto.Year && w.Date.Month == dto.Month)
                     .SumAsync(w => w.Total);
 
-                amount = (salaryInfo.HourlyRate ?? 0) * totalHours;
+                if (salaryInfo.HasSecondaryContract)
+                {
+                    breakdown = SalaryCalculation.CalculateSecondaryContract(salaryInfo, totalHours);
+                    amount = breakdown.ExpectedAmount;
+                }
+                else
+                {
+                    amount = (salaryInfo.HourlyRate ?? 0) * totalHours;
+                }
             }
             else if (salaryInfo.ContractType == "Umowa o prace")
             {
@@ -81,6 +113,7 @@ namespace PanelPracownika.Controllers
             if (existingRecord != null)
             {
                 existingRecord.ExpectedAmount = Math.Round(amount, 2);
+                existingRecord.Breakdown = breakdown;
                 existingRecord.ReceivedAmount = 0;
                 existingRecord.IsConfirmed = false;
                 existingRecord.HasBonus = false;
@@ -94,6 +127,7 @@ namespace PanelPracownika.Controllers
                     Year = dto.Year,
                     Month = dto.Month,
                     ExpectedAmount = Math.Round(amount, 2),
+                    Breakdown = breakdown,
                     ReceivedAmount = 0,
                     IsConfirmed = false,
                     HasBonus = false,
